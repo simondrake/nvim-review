@@ -5,7 +5,13 @@ local review_winnr = nil
 
 local function get_git_root()
   local dir = vim.fn.expand("%:p:h")
-  local result = vim.system({ "git", "-C", dir, "rev-parse", "--show-toplevel" }, { text = true }):wait()
+  if dir ~= "" then
+    local result = vim.system({ "git", "-C", dir, "rev-parse", "--show-toplevel" }, { text = true }):wait()
+    if result.code == 0 then
+      return result.stdout:gsub("\n$", "")
+    end
+  end
+  local result = vim.system({ "git", "-C", vim.fn.getcwd(), "rev-parse", "--show-toplevel" }, { text = true }):wait()
   if result.code == 0 then
     return result.stdout:gsub("\n$", "")
   end
