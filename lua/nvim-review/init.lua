@@ -45,13 +45,41 @@ local function get_git_info()
   }
 end
 
+local function get_merge_base(ref, git_root)
+  local result = vim.system({ "git", "-C", git_root, "merge-base", ref, "HEAD" }, { text = true }):wait()
+  if result.code == 0 and result.stdout ~= "" then
+    return result.stdout:gsub("\n$", "")
+  end
+  return nil
+end
+
 local function get_changed_files(ref, git_root)
   if ref then
-    local result = vim.system({ "git", "-C", git_root, "diff", "--name-status", ref .. "...HEAD" }, { text = true }):wait()
-    if result.code == 0 and result.stdout ~= "" then
-      return { changed = parse_status_output(result.stdout) }
+    local base = get_merge_base(ref, git_root) or ref
+    local seen = {}
+    local changed = {}
+
+    local diff_out = vim.system({ "git", "-C", git_root, "diff", "--name-status", base }, { text = true }):wait()
+    if diff_out.code == 0 and diff_out.stdout ~= "" then
+      for _, f in ipairs(parse_status_output(diff_out.stdout)) do
+        if not seen[f.file] then
+          seen[f.file] = true
+          table.insert(changed, f)
+        end
+      end
     end
-    return { changed = {} }
+
+    local untracked_out = vim.system({ "git", "-C", git_root, "ls-files", "--others", "--exclude-standard" }, { text = true }):wait()
+    if untracked_out.code == 0 and untracked_out.stdout ~= "" then
+      for file in untracked_out.stdout:gmatch("[^\n]+") do
+        if file ~= "" and not seen[file] then
+          seen[file] = true
+          table.insert(changed, { status = "??", file = file })
+        end
+      end
+    end
+
+    return { changed = changed }
   end
 
   local staged = {}
@@ -188,6 +216,32 @@ local function create_review_buffer(file_groups, git_info, ref)
   return bufnr, #lines
 end
 
+local function apply_ref_diff(file_bufnr, git_root, base, relpath)
+  local ok_minidiff, minidiff = pcall(require, "mini.diff")
+  if not ok_minidiff then
+    return
+  end
+
+  local result = vim.system({ "git", "-C", git_root, "show", base .. ":" .. relpath }, { text = true }):wait()
+  local ref_text = ""
+  if result.code == 0 then
+    ref_text = result.stdout or ""
+  end
+
+  local set = function()
+    if vim.api.nvim_buf_is_valid(file_bufnr) then
+      pcall(minidiff.set_ref_text, file_bufnr, ref_text)
+    end
+  end
+
+  -- mini.diff's git source asynchronously sets reference text to the HEAD blob
+  -- after attach. Set immediately, then re-apply a few times to win the race.
+  set()
+  for _, delay in ipairs({ 50, 200, 500 }) do
+    vim.defer_fn(set, delay)
+  end
+end
+
 local function open_file_at_cursor()
   local bufnr = vim.api.nvim_get_current_buf()
   local lnum = vim.api.nvim_win_get_cursor(0)[1]
@@ -212,7 +266,13 @@ local function open_file_at_cursor()
     return
   end
 
-  local full_path = git_root .. "/" .. files[file_idx].file
+  local relpath = files[file_idx].file
+  local full_path = git_root .. "/" .. relpath
+
+  local ok_base, merge_base = pcall(vim.api.nvim_buf_get_var, bufnr, "review_merge_base")
+  if not ok_base then
+    merge_base = ""
+  end
 
   vim.cmd("wincmd p")
 
@@ -221,6 +281,10 @@ local function open_file_at_cursor()
   end
 
   vim.cmd("edit " .. vim.fn.fnameescape(full_path))
+
+  if merge_base ~= "" then
+    apply_ref_diff(vim.api.nvim_get_current_buf(), git_root, merge_base, relpath)
+  end
 end
 
 -- Setup keymaps for review buffer
@@ -252,8 +316,10 @@ local function open_review(ref)
   end
 
   local file_groups = get_changed_files(ref, git_info.root)
+  local merge_base = ref and get_merge_base(ref, git_info.root) or nil
   local line_count
   review_bufnr, line_count = create_review_buffer(file_groups, git_info, ref)
+  vim.api.nvim_buf_set_var(review_bufnr, "review_merge_base", merge_base or "")
 
   vim.cmd("botright split")
   review_winnr = vim.api.nvim_get_current_win()
@@ -317,12 +383,22 @@ function M.navigate(direction)
     return true
   end
 
-  local full_path = git_root .. "/" .. files[next_idx].file
+  local relpath = files[next_idx].file
+  local full_path = git_root .. "/" .. relpath
+  local ok_base, merge_base = pcall(vim.api.nvim_buf_get_var, review_bufnr, "review_merge_base")
+  if not ok_base then
+    merge_base = ""
+  end
+
   if vim.api.nvim_get_current_win() == review_winnr then
     vim.cmd("wincmd p")
   end
 
   vim.cmd("edit " .. vim.fn.fnameescape(full_path))
+
+  if merge_base ~= "" then
+    apply_ref_diff(vim.api.nvim_get_current_buf(), git_root, merge_base, relpath)
+  end
   return true
 end
 
