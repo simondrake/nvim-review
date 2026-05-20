@@ -242,6 +242,18 @@ local function apply_ref_diff(file_bufnr, git_root, base, relpath)
   end
 end
 
+local function find_editor_win(review_win)
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if win ~= review_win then
+      local cfg = vim.api.nvim_win_get_config(win)
+      if cfg.relative == "" then
+        return win
+      end
+    end
+  end
+  return nil
+end
+
 local function open_file_at_cursor()
   local bufnr = vim.api.nvim_get_current_buf()
   local lnum = vim.api.nvim_win_get_cursor(0)[1]
@@ -274,9 +286,10 @@ local function open_file_at_cursor()
     merge_base = ""
   end
 
-  vim.cmd("wincmd p")
-
-  if vim.api.nvim_get_current_buf() == bufnr then
+  local target_win = find_editor_win(review_winnr)
+  if target_win then
+    vim.api.nvim_set_current_win(target_win)
+  else
     vim.cmd("above split")
   end
 
@@ -450,7 +463,10 @@ local function open_review(ref)
     vim.api.nvim_win_set_cursor(review_winnr, { file_lines[1], 0 })
     open_file_at_cursor()
   else
-    vim.cmd("wincmd p")
+    local target_win = find_editor_win(review_winnr)
+    if target_win then
+      vim.api.nvim_set_current_win(target_win)
+    end
   end
 end
 
@@ -503,7 +519,12 @@ function M.navigate(direction)
   end
 
   if vim.api.nvim_get_current_win() == review_winnr then
-    vim.cmd("wincmd p")
+    local target_win = find_editor_win(review_winnr)
+    if target_win then
+      vim.api.nvim_set_current_win(target_win)
+    else
+      vim.cmd("above split")
+    end
   end
 
   vim.cmd("edit " .. vim.fn.fnameescape(full_path))
