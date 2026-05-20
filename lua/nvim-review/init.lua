@@ -445,7 +445,13 @@ local function open_review(ref)
 
   vim.api.nvim_set_option_value("buflisted", false, { buf = review_bufnr })
 
-  vim.cmd("wincmd p")
+  local ok_lines, file_lines = pcall(vim.api.nvim_buf_get_var, review_bufnr, "review_file_lines")
+  if ok_lines and file_lines and file_lines[1] then
+    vim.api.nvim_win_set_cursor(review_winnr, { file_lines[1], 0 })
+    open_file_at_cursor()
+  else
+    vim.cmd("wincmd p")
+  end
 end
 
 function M.is_open()
