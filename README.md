@@ -67,6 +67,7 @@ Consecutive lines from the same commit are dimmed to reduce visual noise.
 | Key | Action |
 |---|---|
 | `<CR>` | Open file under cursor in the window above |
+| `d` | Show git diff for file under cursor in a floating window (`q`/`<Esc>` to close) |
 | `q` | Close the review split |
 
 ### Navigation API

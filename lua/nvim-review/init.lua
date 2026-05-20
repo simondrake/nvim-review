@@ -287,11 +287,117 @@ local function open_file_at_cursor()
   end
 end
 
+local function get_file_diff(git_root, status, relpath, merge_base)
+  local cmd
+  if merge_base and merge_base ~= "" then
+    cmd = { "git", "-C", git_root, "diff", merge_base, "--", relpath }
+  elseif status == "??" then
+    cmd = { "git", "-C", git_root, "diff", "--no-index", "--", "/dev/null", relpath }
+  else
+    cmd = { "git", "-C", git_root, "diff", "HEAD", "--", relpath }
+  end
+
+  local result = vim.system(cmd, { text = true }):wait()
+  -- `git diff --no-index` exits 1 when files differ, which is the normal case here.
+  if result.code ~= 0 and result.code ~= 1 then
+    return nil, result.stderr or ""
+  end
+  return result.stdout or "", nil
+end
+
+local function open_diff_at_cursor()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local lnum = vim.api.nvim_win_get_cursor(0)[1]
+
+  local ok_map, line_map = pcall(vim.api.nvim_buf_get_var, bufnr, "review_line_map")
+  if not ok_map or not line_map[lnum] or line_map[lnum] == 0 then
+    return
+  end
+
+  local ok_files, files = pcall(vim.api.nvim_buf_get_var, bufnr, "review_files")
+  if not ok_files then
+    return
+  end
+
+  local file_idx = line_map[lnum]
+  local entry = files[file_idx]
+  if not entry then
+    return
+  end
+
+  local git_root = get_git_root()
+  if not git_root then
+    return
+  end
+
+  local ok_base, merge_base = pcall(vim.api.nvim_buf_get_var, bufnr, "review_merge_base")
+  if not ok_base then
+    merge_base = ""
+  end
+
+  local diff_text, err = get_file_diff(git_root, entry.status, entry.file, merge_base)
+  if not diff_text then
+    vim.notify("git diff failed: " .. (err or ""), vim.log.levels.ERROR)
+    return
+  end
+
+  local lines = {}
+  if diff_text == "" then
+    lines = { "(no diff for " .. entry.file .. ")" }
+  else
+    for line in diff_text:gmatch("([^\n]*)\n?") do
+      table.insert(lines, line)
+    end
+    if lines[#lines] == "" then
+      table.remove(lines, #lines)
+    end
+  end
+
+  local diff_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_option_value("buftype", "nofile", { buf = diff_buf })
+  vim.api.nvim_set_option_value("swapfile", false, { buf = diff_buf })
+  vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = diff_buf })
+  vim.api.nvim_buf_set_lines(diff_buf, 0, -1, false, lines)
+  vim.api.nvim_set_option_value("modifiable", false, { buf = diff_buf })
+  vim.api.nvim_set_option_value("filetype", "diff", { buf = diff_buf })
+
+  local ui = vim.api.nvim_list_uis()[1] or { width = vim.o.columns, height = vim.o.lines }
+  local width = math.floor(ui.width * 0.85)
+  local height = math.floor(ui.height * 0.85)
+  local row = math.floor((ui.height - height) / 2)
+  local col = math.floor((ui.width - width) / 2)
+
+  local diff_win = vim.api.nvim_open_win(diff_buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    title = " " .. entry.file .. " ",
+    title_pos = "center",
+  })
+
+  vim.api.nvim_set_option_value("wrap", false, { win = diff_win })
+  vim.api.nvim_set_option_value("cursorline", true, { win = diff_win })
+
+  local close_opts = { noremap = true, silent = true, buffer = diff_buf }
+  local function close()
+    if vim.api.nvim_win_is_valid(diff_win) then
+      vim.api.nvim_win_close(diff_win, true)
+    end
+  end
+  vim.keymap.set("n", "q", close, close_opts)
+  vim.keymap.set("n", "<Esc>", close, close_opts)
+end
+
 -- Setup keymaps for review buffer
 local function setup_review_keymaps(bufnr)
   local opts = { noremap = true, silent = true, buffer = bufnr }
 
   vim.keymap.set("n", "<CR>", open_file_at_cursor, opts)
+  vim.keymap.set("n", "d", open_diff_at_cursor, opts)
 
   -- Close review with q
   vim.keymap.set("n", "q", function()
