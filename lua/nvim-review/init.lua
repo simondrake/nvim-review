@@ -242,6 +242,16 @@ local function apply_ref_diff(file_bufnr, git_root, base, relpath)
   end
 end
 
+local function setup_file_keymaps(file_bufnr)
+  local ok_minidiff, minidiff = pcall(require, "mini.diff")
+  if not ok_minidiff then
+    return
+  end
+  vim.keymap.set("n", "<leader>do", function()
+    minidiff.toggle_overlay(file_bufnr)
+  end, { noremap = true, silent = true, buffer = file_bufnr, desc = "Toggle inline diff overlay" })
+end
+
 local function find_editor_win(review_win)
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if win ~= review_win then
@@ -298,6 +308,7 @@ local function open_file_at_cursor()
   if merge_base ~= "" then
     apply_ref_diff(vim.api.nvim_get_current_buf(), git_root, merge_base, relpath)
   end
+  setup_file_keymaps(vim.api.nvim_get_current_buf())
 end
 
 local function get_file_diff(git_root, status, relpath, merge_base)
@@ -532,6 +543,7 @@ function M.navigate(direction)
   if merge_base ~= "" then
     apply_ref_diff(vim.api.nvim_get_current_buf(), git_root, merge_base, relpath)
   end
+  setup_file_keymaps(vim.api.nvim_get_current_buf())
   return true
 end
 

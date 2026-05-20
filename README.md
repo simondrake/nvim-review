@@ -70,6 +70,12 @@ Consecutive lines from the same commit are dimmed to reduce visual noise.
 | `d` | Show git diff for file under cursor in a floating window (`q`/`<Esc>` to close) |
 | `q` | Close the review split |
 
+In the opened file buffer:
+
+| Key | Action |
+|---|---|
+| `<leader>do` | Toggle inline diff overlay (shows deletions/changes inline via `mini.diff`) |
+
 ### Navigation API
 
 `navigate(direction)` moves through files in the review split and opens them. Returns `false` if the review split isn't open, so you can fall back to quickfix:
