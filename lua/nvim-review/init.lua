@@ -264,6 +264,13 @@ local function find_editor_win(review_win)
   return nil
 end
 
+local function force_file_window_options(win)
+  if not vim.api.nvim_win_is_valid(win) then return end
+  vim.api.nvim_set_option_value("signcolumn", "yes", { win = win })
+  vim.api.nvim_set_option_value("number", true, { win = win })
+  vim.api.nvim_set_option_value("relativenumber", true, { win = win })
+end
+
 local function open_file_at_cursor()
   local bufnr = vim.api.nvim_get_current_buf()
   local lnum = vim.api.nvim_win_get_cursor(0)[1]
@@ -304,6 +311,13 @@ local function open_file_at_cursor()
   end
 
   vim.cmd("edit " .. vim.fn.fnameescape(full_path))
+
+  -- Window may have inherited options from a non-file context (review split or
+  -- oil directory buffer). Force sane defaults now and again on next tick to
+  -- outlast plugin autocmds (e.g. oil) that fire after :edit.
+  local file_win = vim.api.nvim_get_current_win()
+  force_file_window_options(file_win)
+  vim.schedule(function() force_file_window_options(file_win) end)
 
   if merge_base ~= "" then
     apply_ref_diff(vim.api.nvim_get_current_buf(), git_root, merge_base, relpath)
@@ -539,6 +553,10 @@ function M.navigate(direction)
   end
 
   vim.cmd("edit " .. vim.fn.fnameescape(full_path))
+
+  local file_win = vim.api.nvim_get_current_win()
+  force_file_window_options(file_win)
+  vim.schedule(function() force_file_window_options(file_win) end)
 
   if merge_base ~= "" then
     apply_ref_diff(vim.api.nvim_get_current_buf(), git_root, merge_base, relpath)
