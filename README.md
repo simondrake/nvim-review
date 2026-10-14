@@ -98,6 +98,8 @@ end)
 
 Navigation wraps around -- going past the last file jumps to the first, and vice versa.
 
+If the `d` diff float is focused, `navigate()` shows the next/previous file's diff in the same float instead of opening the file.
+
 ## API
 
 | Function | Description |
