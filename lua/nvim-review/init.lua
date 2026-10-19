@@ -407,7 +407,9 @@ local function show_diff(entry, git_root, merge_base)
   })
   diff_winnr = diff_win
 
-  vim.api.nvim_set_option_value("wrap", false, { win = diff_win })
+  vim.api.nvim_set_option_value("wrap", true, { win = diff_win })
+  -- Without a marker, wrapped continuations of +/- lines read as context lines.
+  vim.api.nvim_set_option_value("showbreak", "↪ ", { win = diff_win, scope = "local" })
   vim.api.nvim_set_option_value("cursorline", true, { win = diff_win })
 
   local close_opts = { noremap = true, silent = true, buffer = diff_buf }
